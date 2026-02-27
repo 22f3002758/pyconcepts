@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nested Loop Simulator</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --code-bg: #1e293b;
+            --text-color: #f8fafc;
+            --highlight: #fde047;
+            --active: #3b82f6;
+            --complete: #22c55e;
+            --border: #334155;
+        }
+
+        body {
+            font-family: 'Fira Code', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 20px;
+        }
+
+        /* Controls */
+        .controls {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        #runBtn { background: var(--active); color: white; }
+        #stepBtn { background: #6366f1; color: white; }
+        #resetBtn { background: #ef4444; color: white; }
+        button:hover { opacity: 0.8; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+
+        /* Left Pane: Code */
+        .code-pane {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            font-size: 1.2rem;
+            line-height: 1.8;
+        }
+
+        .line { padding: 0 10px; border-radius: 4px; transition: 0.2s; color: #94a3b8; }
+        .line.active { background: var(--highlight); color: #000; font-weight: bold; }
+        .indent-1 { margin-left: 25px; }
+        .indent-2 { margin-left: 50px; }
+
+        /* Right Pane: Visuals */
+        .visual-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .trackers {
+            display: flex;
+            justify-content: space-around;
+            background: var(--code-bg);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+        }
+
+        .tracker-val { color: var(--active); font-weight: bold; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            padding: 20px;
+            background: var(--code-bg);
+            border-radius: 12px;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            transition: 0.4s;
+        }
+
+        .cell.active {
+            background: var(--active);
+            border-color: #fff;
+            transform: scale(1.2);
+            box-shadow: 0 0 15px var(--active);
+        }
+
+        .cell.complete {
+            background: var(--complete);
+            border-color: var(--complete);
+        }
+
+        .label { color: #64748b; font-size: 0.9rem; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>Nested Loop Simulator (Python)</h2>
+
+    <div class="controls">
+        <button id="runBtn">Run Simulation</button>
+        <button id="stepBtn">Manual Step</button>
+        <button id="resetBtn">Reset</button>
+        <div>
+            <span class="label">Speed:</span><br>
+            <input type="range" id="speedSlider" min="200" max="2000" value="800" step="100" style="direction: rtl;">
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="code-pane">
+            <div id="line0" class="line">for i in range(3):</div>
+            <div id="line1" class="line indent-1">for j in range(4):</div>
+            <div id="line2" class="line indent-2">print(f"Index: {i}, {j}")</div>
+        </div>
+
+        <div class="visual-pane">
+            <div class="trackers">
+                <div>Outer (i): <span id="valI" class="tracker-val">?</span></div>
+                <div>Inner (j): <span id="valJ" class="tracker-val">?</span></div>
+            </div>
+            <div class="grid" id="grid">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        const grid = document.getElementById('grid');
+        const speedSlider = document.getElementById('speedSlider');
+        let i = 0, j = 0;
+        let currentLine = -1;
+        let isRunning = false;
+        let timer = null;
+
+        // Initialize Grid
+        function initGrid() {
+            grid.innerHTML = '';
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 4; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${r}-${c}`;
+                    cell.innerText = `${r},${c}`;
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        function updateCodeHighlight(lineIdx) {
+            document.querySelectorAll('.line').forEach(l => l.classList.remove('active'));
+            if(lineIdx >= 0) document.getElementById(`line${lineIdx}`).classList.add('active');
+        }
+
+        function reset() {
+            clearTimeout(timer);
+            i = 0; j = 0;
+            currentLine = -1;
+            isRunning = false;
+            document.getElementById('runBtn').disabled = false;
+            document.getElementById('stepBtn').disabled = false;
+            document.getElementById('valI').innerText = '?';
+            document.getElementById('valJ').innerText = '?';
+            updateCodeHighlight(-1);
+            initGrid();
+        }
+
+        function step() {
+            if (i >= 3) {
+                isRunning = false;
+                document.getElementById('runBtn').disabled = true;
+                document.getElementById('stepBtn').disabled = true;
+                updateCodeHighlight(-1);
+                return;
+            }
+
+            // Logic State Machine
+            if (currentLine === -1 || currentLine === 2) {
+                // Moving to Outer Loop start or next iteration
+                if (currentLine === 2) {
+                    j++;
+                    if (j >= 4) {
+                        j = 0;
+                        i++;
+                        if (i >= 3) { step(); return; }
+                        currentLine = 0;
+                    } else {
+                        currentLine = 1;
+                    }
+                } else {
+                    currentLine = 0;
+                }
+            } else if (currentLine === 0) {
+                currentLine = 1;
+            } else if (currentLine === 1) {
+                currentLine = 2;
+            }
+
+            // Apply Visuals
+            updateCodeHighlight(currentLine);
+           
+            if (currentLine === 0) {
+                document.getElementById('valI').innerText = i;
+            } else if (currentLine === 1) {
+                document.getElementById('valJ').innerText = j;
+            } else if (currentLine === 2) {
+                const cell = document.getElementById(`cell-${i}-${j}`);
+                // Clear previous actives
+                document.querySelectorAll('.cell.active').forEach(c => {
+                    c.classList.remove('active');
+                    c.classList.add('complete');
+                });
+                cell.classList.add('active');
+            }
+
+            if (isRunning) {
+                timer = setTimeout(step, 2200 - speedSlider.value);
+            }
+        }
+
+        document.getElementById('runBtn').addEventListener('click', () => {
+            isRunning = true;
+            document.getElementById('runBtn').disabled = true;
+            step();
+        });
+
+        document.getElementById('stepBtn').addEventListener('click', step);
+        document.getElementById('resetBtn').addEventListener('click', reset);
+
+        initGrid();
+    </script>
+</body>
+</html>
